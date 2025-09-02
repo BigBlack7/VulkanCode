@@ -1,16 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 project(VulkanStudy LANGUAGES CXX)
 
-include(ProcessorCount)
-ProcessorCount(N)
+option(GLFW_BUILD_EXAMPLES "Build the GLFW example programs" OFF)
+option(GLFW_BUILD_TESTS "Build the GLFW test programs" OFF)
+option(GLFW_BUILD_DOCS "Build the GLFW documentation" OFF)
+option(GLFW_INSTALL "Generate installation target" OFF)
+option(GLFW_BUILD_WIN32 "Build support for Win32" ON)
+option(GLFW_BUILD_COCOA "Build support for Cocoa" OFF)
+option(GLFW_BUILD_X11 "Build support for X11" OFF)
+option(GLFW_BUILD_WAYLAND "Build support for Wayland" OFF)
 
-if(N EQUAL 0)
-    set(N 24)
-endif()
-
-set(CMAKE_BUILD_PARALLEL_LEVEL ${N})
-
+add_subdirectory(thirdparty/glm)
+add_subdirectory(thirdparty/glfw)
 add_subdirectory(core)
-
-# add_subdirectory(thirdparty/glm)
-# add_subdirectory(thirdparty/glfw)

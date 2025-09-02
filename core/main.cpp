@@ -1,9 +1,20 @@
-#include <iostream>
-#define VK_USE_PLATFORM_WIN32_KHR
-#include<vulkan/vulkan.h>
+#include "glfwGeneral.hpp"
 
 int main()
 {
-    std::cout << "Hello, World!" << std::endl;
+
+    if (!InitializeWindow({1280, 720}))
+    {
+        return -1;
+    }
+    while (!glfwWindowShouldClose(pWindow))
+    {
+        // TODO render pass
+        glfwPollEvents();
+        FPSDisplay();
+    }
+    TerminateWindow();
+
+    std::cout << "Hello, Vulkan!" << std::endl;
     return 0;
 }
