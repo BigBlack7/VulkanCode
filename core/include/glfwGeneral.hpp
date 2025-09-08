@@ -88,14 +88,15 @@ bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizea
         return false;
     //----------------------------------------
 
-    // TODO 1-4
+    if (vk::GraphicsBase::Base().CreateSwapChain(isLimitFrameRate))
+        return false;
     return true;
 }
 
 /// @brief terminate window
 void TerminateWindow()
 {
-    // TODO 1-4
+    vk::GraphicsBase::Base().WaitIdle();
     glfwTerminate();
 }
 
