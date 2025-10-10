@@ -11,12 +11,6 @@ GLFWmonitor *pMonitor;
 // window title
 const char *pWindowTitle = "Phoebus";
 
-/// @brief initialize window
-/// @param size
-/// @param isFullscreen
-/// @param isResizeable
-/// @param isLimitFrameRate
-/// @return true if success, false if fail
 bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizeable = true, bool isLimitFrameRate = true)
 {
     if (!glfwInit())
@@ -45,8 +39,8 @@ bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizea
         return false;
     }
 #ifdef _WIN32
-    vk::GraphicsBase::Base().AddInstanceExtension(VK_KHR_SURFACE_EXTENSION_NAME);
-    vk::GraphicsBase::Base().AddInstanceExtension(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+    vkb::GraphicsBase::Base().AddInstanceExtension(VK_KHR_SURFACE_EXTENSION_NAME);
+    vkb::GraphicsBase::Base().AddInstanceExtension(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 #else
     // get instance extensions
     uint32_t extensionCount = 0;
@@ -63,32 +57,32 @@ bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizea
         vk::GraphicsBase::Base().AddInstanceExtension(extensionNames[i]);
     }
 #endif
-    vk::GraphicsBase::Base().AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    vkb::GraphicsBase::Base().AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     // create instance before create window surface
-    vk::GraphicsBase::Base().UseLatestApiVersion();
-    if (vk::GraphicsBase::Base().CreateInstance())
+    vkb::GraphicsBase::Base().UseLatestApiVersion();
+    if (vkb::GraphicsBase::Base().CreateInstance())
     {
         return false;
     }
     // create window surface
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (VkResult res = glfwCreateWindowSurface(vk::GraphicsBase::Base().GetInstance(), pWindow, nullptr, &surface))
+    if (VkResult res = glfwCreateWindowSurface(vkb::GraphicsBase::Base().GetInstance(), pWindow, nullptr, &surface))
     {
         std::cout << std::format("[ InitializeWindow ] ERROR\nFailed to create window surface!\nError code: {}\n", int32_t(res));
         glfwTerminate();
         return false;
     }
-    vk::GraphicsBase::Base().SetSurface(surface);
+    vkb::GraphicsBase::Base().SetSurface(surface);
 
     // by using || operator to short-circuit execution to save a few lines
     if ( // get physical device, and use first one, don't consider exchange physical device after any func below fail
-        vk::GraphicsBase::Base().GetPhysicalDevices() ||
-        vk::GraphicsBase::Base().DeterminePhysicalDevice(0, true, false) ||
-        vk::GraphicsBase::Base().CreateDevice())
+        vkb::GraphicsBase::Base().GetPhysicalDevices() ||
+        vkb::GraphicsBase::Base().DeterminePhysicalDevice(0, true, false) ||
+        vkb::GraphicsBase::Base().CreateDevice())
         return false;
     //----------------------------------------
 
-    if (vk::GraphicsBase::Base().CreateSwapChain(isLimitFrameRate))
+    if (vkb::GraphicsBase::Base().CreateSwapChain(isLimitFrameRate))
         return false;
     return true;
 }
@@ -96,7 +90,7 @@ bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizea
 /// @brief terminate window
 void TerminateWindow()
 {
-    vk::GraphicsBase::Base().WaitIdle();
+    vkb::GraphicsBase::Base().WaitIdle();
     glfwTerminate();
 }
 

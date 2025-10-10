@@ -2,11 +2,11 @@
 #include "vkCore.hpp"
 #define VK_RESULT_THROW
 
-#define DestroyHandleBy(Func)                                        \
-    if (handle)                                                      \
-    {                                                                \
-        Func(vk::GraphicsBase::Base().GetDevice(), handle, nullptr); \
-        handle = VK_NULL_HANDLE;                                     \
+#define DestroyHandleBy(Func)                                         \
+    if (handle)                                                       \
+    {                                                                 \
+        Func(vkb::GraphicsBase::Base().GetDevice(), handle, nullptr); \
+        handle = VK_NULL_HANDLE;                                      \
     }
 #define MoveHandle         \
     handle = other.handle; \
@@ -22,7 +22,7 @@
 #define ENABLE_DEBUG_MESSENGER false
 #endif
 
-namespace vk
+namespace vkb
 {
     constexpr VkExtent2D defaultWindowSize = {1280, 720};
     inline auto &outStream = std::cout;
@@ -119,6 +119,7 @@ namespace vk
         VkImageView GetSwapChainImageView(uint32_t index) const { return mSwapChainImageViews[index]; }
         uint32_t GetSwapChainImageCount() const { return uint32_t(mSwapChainImages.size()); }
         const VkSwapchainCreateInfoKHR &GetSwapChainCreateInfo() const { return mSwapChainCreateInfo; }
+        uint32_t GetCurrentImageIndex() const { return mCurrentImageIndex; }
 
         // before create instance
         void AddInstanceLayer(const char *layerName)
@@ -655,6 +656,126 @@ namespace vk
             return VK_SUCCESS;
         }
 
+        ResultT SwapImage(VkSemaphore semaphore_imageIsAvailable)
+        {
+            // destroy old swapchain
+            if (mSwapChainCreateInfo.oldSwapchain && mSwapChainCreateInfo.oldSwapchain != mSwapChain)
+            {
+                vkDestroySwapchainKHR(mDevice, mSwapChainCreateInfo.oldSwapchain, nullptr);
+                mSwapChainCreateInfo.oldSwapchain = VK_NULL_HANDLE;
+            }
+            // get swapchain image idx
+            while (VkResult res = vkAcquireNextImageKHR(mDevice, mSwapChain, UINT64_MAX, semaphore_imageIsAvailable, VK_NULL_HANDLE, &mCurrentImageIndex))
+            {
+                switch (res)
+                {
+                case VK_SUBOPTIMAL_KHR:
+                case VK_ERROR_OUT_OF_DATE_KHR:
+                    if (VkResult res = RecreateSwapChain())
+                        return res;
+                    break;
+                default:
+                    outStream << std::format("[ GraphicsBase ] ERROR\nFailed to acquire next image!\nError code: {}\n", int32_t(res));
+                    return res;
+                }
+            }
+            return VK_SUCCESS;
+        }
+
+        // submit command buffer for graphics queue
+        ResultT SubmitCommandBufferGraphics(VkSubmitInfo &submitInfo, VkFence fence = VK_NULL_HANDLE) const
+        {
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            VkResult res = vkQueueSubmit(mQueueGraphics, 1, &submitInfo, fence);
+            if (res)
+            {
+                outStream << std::format("[ GraphicsBase ] ERROR\nFailed to submit command buffer!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        // during render loop, submit command buffer for graphics queue
+        ResultT SubmitCommandBufferGraphics(
+            VkCommandBuffer commandBuffer,
+            VkSemaphore semaphore_imageIsAvailable = VK_NULL_HANDLE,
+            VkSemaphore semaphore_renderIsOver = VK_NULL_HANDLE,
+            VkFence fence = VK_NULL_HANDLE,
+            VkPipelineStageFlags waitDstStage_imageIsAvailable = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT) const
+        {
+            VkSubmitInfo submitInfo = {
+                .commandBufferCount = 1,
+                .pCommandBuffers = &commandBuffer};
+
+            if (semaphore_imageIsAvailable)
+            {
+                submitInfo.waitSemaphoreCount = 1;
+                submitInfo.pWaitSemaphores = &semaphore_imageIsAvailable;
+                submitInfo.pWaitDstStageMask = &waitDstStage_imageIsAvailable;
+            }
+            if (semaphore_renderIsOver)
+            {
+                submitInfo.signalSemaphoreCount = 1;
+                submitInfo.pSignalSemaphores = &semaphore_renderIsOver;
+            }
+            return SubmitCommandBufferGraphics(submitInfo, fence);
+        }
+        // submit command buffer for graphics queue, and only for using fence
+        ResultT SubmitCommandBufferGraphics(VkCommandBuffer commandBuffer, VkFence fence = VK_NULL_HANDLE) const
+        {
+            VkSubmitInfo submitInfo = {
+                .commandBufferCount = 1,
+                .pCommandBuffers = &commandBuffer};
+            return SubmitCommandBufferGraphics(submitInfo, fence);
+        }
+        // submit command buffer for compute queue
+        ResultT SubmitCommandBuffer_Compute(VkSubmitInfo &submitInfo, VkFence fence = VK_NULL_HANDLE) const
+        {
+            submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            VkResult res = vkQueueSubmit(mQueueCompute, 1, &submitInfo, fence);
+            if (res)
+                outStream << std::format("[ GraphicsBase ] ERROR\nFailed to submit command buffer!\nError code: {}\n", int32_t(res));
+            return res;
+        }
+        // submit command buffer for compute queue, and only for using fence
+        ResultT SubmitCommandBuffer_Compute(VkCommandBuffer commandBuffer, VkFence fence = VK_NULL_HANDLE) const
+        {
+            VkSubmitInfo submitInfo = {
+                .commandBufferCount = 1,
+                .pCommandBuffers = &commandBuffer};
+            return SubmitCommandBuffer_Compute(submitInfo, fence);
+        }
+
+        // display image
+        ResultT PresentImage(VkPresentInfoKHR &presentInfo)
+        {
+            presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+            switch (VkResult res = vkQueuePresentKHR(mQueuePresentation, &presentInfo))
+            {
+            case VK_SUCCESS:
+                return VK_SUCCESS;
+            case VK_SUBOPTIMAL_KHR:
+            case VK_ERROR_OUT_OF_DATE_KHR:
+                return RecreateSwapChain();
+            default:
+                outStream << std::format("[ GraphicsBase ] ERROR\nFailed to present image!\nError code: {}\n", int32_t(res));
+                return res;
+            }
+        }
+        // use for present image in render loop
+        ResultT PresentImage(VkSemaphore semaphore_renderingIsOver = VK_NULL_HANDLE)
+        {
+            VkPresentInfoKHR presentInfo = {
+                .swapchainCount = 1,
+                .pSwapchains = &mSwapChain,
+                .pImageIndices = &mCurrentImageIndex};
+
+            if (semaphore_renderingIsOver)
+            {
+                presentInfo.waitSemaphoreCount = 1;
+                presentInfo.pWaitSemaphores = &semaphore_renderingIsOver;
+            }
+            return PresentImage(presentInfo);
+        }
+
         ResultT WaitIdle() const
         {
             VkResult res = vkDeviceWaitIdle(mDevice);
@@ -675,6 +796,29 @@ namespace vk
             mSwapChainImageViews.resize(0);
             mSwapChainCreateInfo = {};
             mDebugMessenger = VK_NULL_HANDLE;
+        }
+
+        // callback
+        void AddCallbackCreateSwapchain(void (*function)())
+        {
+            mCallbackCreateSwapchain.push_back(function);
+        }
+        void AddCallbackDestroySwapchain(void (*function)())
+        {
+            mCallbackDestroySwapchain.push_back(function);
+        }
+        void AddCallbackCreateDevice(void (*function)())
+        {
+            mCallbackCreateDevice.push_back(function);
+        }
+        void AddCallbackDestroyDevice(void (*function)())
+        {
+            mCallbackDestroyDevice.push_back(function);
+        }
+        static void ExecuteCallbacks(std::vector<void (*)()> callbacks)
+        {
+            for (size_t size = callbacks.size(), i = 0; i < size; i++)
+                callbacks[i]();
         }
 
     private:
@@ -868,29 +1012,6 @@ namespace vk
             return VK_SUCCESS;
         }
 
-        // callback
-        void AddCallbackCreateSwapchain(void (*function)())
-        {
-            mCallbackCreateSwapchain.push_back(function);
-        }
-        void AddCallbackDestroySwapchain(void (*function)())
-        {
-            mCallbackDestroySwapchain.push_back(function);
-        }
-        void AddCallback_CreateDevice(void (*function)())
-        {
-            mCallbackCreateDevice.push_back(function);
-        }
-        void AddCallback_DestroyDevice(void (*function)())
-        {
-            mCallbackDestroyDevice.push_back(function);
-        }
-        static void ExecuteCallbacks(std::vector<void (*)()> callbacks)
-        {
-            for (size_t size = callbacks.size(), i = 0; i < size; i++)
-                callbacks[i]();
-        }
-
     private:
         // api
         uint32_t mApiVersion = VK_API_VERSION_1_0;
@@ -933,6 +1054,338 @@ namespace vk
         std::vector<void (*)()> mCallbackDestroySwapchain;
         std::vector<void (*)()> mCallbackCreateDevice;
         std::vector<void (*)()> mCallbackDestroyDevice;
+
+        // swapchain info
+        uint32_t mCurrentImageIndex = 0;
     };
     inline GraphicsBase GraphicsBase::mSingleton;
+
+    class Fence
+    {
+    private:
+        VkFence handle = VK_NULL_HANDLE;
+
+    public:
+        Fence(VkFenceCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        Fence(VkFenceCreateFlags flags = 0)
+        {
+            Create(flags);
+        }
+        Fence(Fence &&other) noexcept { MoveHandle; }
+        ~Fence() { DestroyHandleBy(vkDestroyFence); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+        // const function
+        ResultT Wait() const
+        {
+            VkResult res = vkWaitForFences(GraphicsBase::Base().GetDevice(), 1, &handle, false, UINT64_MAX);
+            if (res)
+            {
+                outStream << std::format("[ Fence ] ERROR\nFailed to wait for a fence!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT Reset() const
+        {
+            VkResult res = vkResetFences(GraphicsBase::Base().GetDevice(), 1, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Fence ] ERROR\nFailed to reset a fence!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        // after waiting, reset immediately
+        ResultT WaitAndReset() const
+        {
+            VkResult res = Wait();
+            res || (res = Reset());
+            return res;
+        }
+
+        ResultT Status() const
+        {
+            VkResult res = vkGetFenceStatus(GraphicsBase::Base().GetDevice(), handle);
+            if (res < 0) // vkGetFenceStatus has two res when successful, so can't only judge result==0
+            {
+                outStream << std::format("[ Fence ] ERROR\nFailed to get a fence status!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+
+        // non-const function
+        ResultT Create(VkFenceCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VkResult res = vkCreateFence(GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Fence ] ERROR\nFailed to create a fence!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT Create(VkFenceCreateFlags flags = 0)
+        {
+            VkFenceCreateInfo createInfo = {
+                .flags = flags};
+            return Create(createInfo);
+        }
+    };
+
+    class Semaphore
+    {
+    private:
+        VkSemaphore handle = VK_NULL_HANDLE;
+
+    public:
+        Semaphore(VkSemaphoreCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        Semaphore(/*VkSemaphoreCreateFlags flags = 0*/)
+        {
+            Create();
+        }
+        Semaphore(Semaphore &&other) noexcept { MoveHandle; }
+        ~Semaphore() { DestroyHandleBy(vkDestroySemaphore); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+
+        // non-const function
+        ResultT Create(VkSemaphoreCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+            VkResult res = vkCreateSemaphore(GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Semaphore ] ERROR\nFailed to create a semaphore!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT Create(/*VkSemaphoreCreateFlags flags = 0*/)
+        {
+            VkSemaphoreCreateInfo createInfo = {};
+            return Create(createInfo);
+        }
+    };
+
+    class CommandBuffer
+    {
+    private:
+        friend class CommandPool;
+        VkCommandBuffer handle = VK_NULL_HANDLE;
+
+    public:
+        CommandBuffer() = default;
+        CommandBuffer(CommandBuffer &&other) noexcept { MoveHandle; }
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+        // const function
+        ResultT Begin(VkCommandBufferUsageFlags usageFlags, VkCommandBufferInheritanceInfo &inheritanceInfo) const
+        {
+            inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+            VkCommandBufferBeginInfo beginInfo = {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .flags = usageFlags,
+                .pInheritanceInfo = &inheritanceInfo};
+            VkResult res = vkBeginCommandBuffer(handle, &beginInfo);
+            if (res)
+            {
+                outStream << std::format("[ CommandBuffer ] ERROR\nFailed to begin a command buffer!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT Begin(VkCommandBufferUsageFlags usageFlags = 0) const
+        {
+            VkCommandBufferBeginInfo beginInfo = {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                .flags = usageFlags};
+            VkResult res = vkBeginCommandBuffer(handle, &beginInfo);
+            if (res)
+            {
+                outStream << std::format("[ CommandBuffer ] ERROR\nFailed to begin a command buffer!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT End() const
+        {
+            VkResult res = vkEndCommandBuffer(handle);
+            if (res)
+            {
+                outStream << std::format("[ CommandBuffer ] ERROR\nFailed to end a command buffer!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+    };
+
+    class CommandPool
+    {
+    private:
+        VkCommandPool handle = VK_NULL_HANDLE;
+
+    public:
+        CommandPool() = default;
+        CommandPool(VkCommandPoolCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        CommandPool(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags = 0)
+        {
+            Create(queueFamilyIndex, flags);
+        }
+        CommandPool(CommandPool &&other) noexcept { MoveHandle; }
+        ~CommandPool() { DestroyHandleBy(vkDestroyCommandPool); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+
+        // const function
+        ResultT AllocateBuffers(ArrayRef<VkCommandBuffer> buffers, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) const
+        {
+            VkCommandBufferAllocateInfo allocateInfo = {
+                .sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+                .commandPool = handle,
+                .level = level,
+                .commandBufferCount = uint32_t(buffers.Count())};
+            VkResult res = vkAllocateCommandBuffers(GraphicsBase::Base().GetDevice(), &allocateInfo, buffers.Pointer());
+            if (res)
+            {
+                outStream << std::format("[ CommandPool ] ERROR\nFailed to allocate command buffers!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT AllocateBuffers(ArrayRef<CommandBuffer> buffers, VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) const
+        {
+            return AllocateBuffers(
+                {&buffers[0].handle, buffers.Count()},
+                level);
+        }
+        void FreeBuffers(ArrayRef<VkCommandBuffer> buffers) const
+        {
+            vkFreeCommandBuffers(GraphicsBase::Base().GetDevice(), handle, uint32_t(buffers.Count()), buffers.Pointer());
+            memset(buffers.Pointer(), 0, sizeof(VkCommandBuffer) * buffers.Count());
+        }
+        void FreeBuffers(ArrayRef<CommandBuffer> buffers) const
+        {
+            FreeBuffers(
+                {&buffers[0].handle, buffers.Count()});
+        }
+
+        // non-const function
+        ResultT Create(VkCommandPoolCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+            VkResult res = vkCreateCommandPool(GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+                outStream << std::format("[ CommandPool ] ERROR\nFailed to create a command pool!\nError code: {}\n", int32_t(res));
+            return res;
+        }
+        ResultT Create(uint32_t queueFamilyIndex, VkCommandPoolCreateFlags flags = 0)
+        {
+            VkCommandPoolCreateInfo createInfo = {
+                .flags = flags,
+                .queueFamilyIndex = queueFamilyIndex};
+            return Create(createInfo);
+        }
+    };
+
+    class RenderPass
+    {
+    private:
+        VkRenderPass handle = VK_NULL_HANDLE;
+
+    public:
+        RenderPass() = default;
+        RenderPass(VkRenderPassCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        RenderPass(RenderPass &&other) noexcept { MoveHandle; }
+        ~RenderPass() { DestroyHandleBy(vkDestroyRenderPass); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+
+        // const function
+        void CmdBegin(VkCommandBuffer commandBuffer, VkRenderPassBeginInfo &beginInfo, VkSubpassContents subpassContents = VK_SUBPASS_CONTENTS_INLINE) const
+        {
+            beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            beginInfo.renderPass = handle;
+            vkCmdBeginRenderPass(commandBuffer, &beginInfo, subpassContents);
+        }
+
+        void CmdBegin(
+            VkCommandBuffer commandBuffer,
+            VkFramebuffer framebuffer,
+            VkRect2D renderArea,
+            ArrayRef<const VkClearValue> clearValues = {},
+            VkSubpassContents subpassContents = VK_SUBPASS_CONTENTS_INLINE) const
+        {
+            VkRenderPassBeginInfo beginInfo = {
+                .sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO,
+                .renderPass = handle,
+                .framebuffer = framebuffer,
+                .renderArea = renderArea,
+                .clearValueCount = uint32_t(clearValues.Count()),
+                .pClearValues = clearValues.Pointer()};
+            vkCmdBeginRenderPass(commandBuffer, &beginInfo, subpassContents);
+        }
+
+        void CmdNext(VkCommandBuffer commandBuffer, VkSubpassContents subpassContents = VK_SUBPASS_CONTENTS_INLINE) const
+        {
+            vkCmdNextSubpass(commandBuffer, subpassContents);
+        }
+
+        void CmdEnd(VkCommandBuffer commandBuffer) const
+        {
+            vkCmdEndRenderPass(commandBuffer);
+        }
+
+        // non-const function
+        ResultT Create(VkRenderPassCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+            VkResult res = vkCreateRenderPass(GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+                outStream << std::format("[ RenderPass ] ERROR\nFailed to create a render pass!\nError code: {}\n", int32_t(res));
+            return res;
+        }
+    };
+
+    class Framebuffer
+    {
+        VkFramebuffer handle = VK_NULL_HANDLE;
+
+    public:
+        Framebuffer() = default;
+        Framebuffer(VkFramebufferCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        Framebuffer(Framebuffer &&other) noexcept { MoveHandle; }
+        ~Framebuffer() { DestroyHandleBy(vkDestroyFramebuffer); }
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+        // non-const Function
+        ResultT Create(VkFramebufferCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+            VkResult res = vkCreateFramebuffer(GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Framebuffer ] ERROR\nFailed to create a framebuffer!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+    };
 }
