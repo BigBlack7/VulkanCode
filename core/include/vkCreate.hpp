@@ -1,13 +1,14 @@
 ﻿#include "vkBase.hpp"
+#include "vkAdvance.hpp"
 
-const VkExtent2D &windowSize = vkb::GraphicsBase::Base().GetSwapChainCreateInfo().imageExtent;
+const VkExtent2D &windowSize = vk::GraphicsBase::Base().GetSwapChainCreateInfo().imageExtent;
 
-namespace vkc
+namespace vk
 {
     struct RenderPassWithFramebuffers
     {
-        vkb::RenderPass __renderPass__;
-        std::vector<vkb::Framebuffer> __frameBuffers__;
+        vk::RenderPass __renderPass__;
+        std::vector<vk::Framebuffer> __frameBuffers__;
     };
 
     const auto &CreateRPWF()
@@ -15,7 +16,7 @@ namespace vkc
         static RenderPassWithFramebuffers rpwf;
 
         VkAttachmentDescription attachmentDescription = {
-            .format = vkb::GraphicsBase::Base().GetSwapChainCreateInfo().imageFormat,
+            .format = vk::GraphicsBase::Base().GetSwapChainCreateInfo().imageFormat,
             .samples = VK_SAMPLE_COUNT_1_BIT,
             .loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR,
             .storeOp = VK_ATTACHMENT_STORE_OP_STORE,
@@ -48,7 +49,7 @@ namespace vkc
 
         auto CreateFramebuffers = []
         {
-            rpwf.__frameBuffers__.resize(vkb::GraphicsBase::Base().GetSwapChainImageCount());
+            rpwf.__frameBuffers__.resize(vk::GraphicsBase::Base().GetSwapChainImageCount());
 
             VkFramebufferCreateInfo framebufferCreateInfo = {
                 .renderPass = rpwf.__renderPass__,
@@ -57,9 +58,9 @@ namespace vkc
                 .height = windowSize.height,
                 .layers = 1};
 
-            for (size_t i = 0; i < vkb::GraphicsBase::Base().GetSwapChainImageCount(); i++)
+            for (size_t i = 0; i < vk::GraphicsBase::Base().GetSwapChainImageCount(); i++)
             {
-                VkImageView attachment = vkb::GraphicsBase::Base().GetSwapChainImageView(i);
+                VkImageView attachment = vk::GraphicsBase::Base().GetSwapChainImageView(i);
                 framebufferCreateInfo.pAttachments = &attachment;
                 rpwf.__frameBuffers__[i].Create(framebufferCreateInfo);
             }
@@ -71,8 +72,8 @@ namespace vkc
         CreateFramebuffers();
 
         ExecuteOnce(rpwf);
-        vkb::GraphicsBase::Base().AddCallbackCreateSwapchain(CreateFramebuffers);
-        vkb::GraphicsBase::Base().AddCallbackDestroySwapchain(DestroyFramebuffers);
+        vk::GraphicsBase::Base().AddCallbackCreateSwapchain(CreateFramebuffers);
+        vk::GraphicsBase::Base().AddCallbackDestroySwapchain(DestroyFramebuffers);
 
         return rpwf;
     }

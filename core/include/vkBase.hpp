@@ -2,11 +2,11 @@
 #include "vkCore.hpp"
 #define VK_RESULT_THROW
 
-#define DestroyHandleBy(Func)                                         \
-    if (handle)                                                       \
-    {                                                                 \
-        Func(vkb::GraphicsBase::Base().GetDevice(), handle, nullptr); \
-        handle = VK_NULL_HANDLE;                                      \
+#define DestroyHandleBy(Func)                                        \
+    if (handle)                                                      \
+    {                                                                \
+        Func(vk::GraphicsBase::Base().GetDevice(), handle, nullptr); \
+        handle = VK_NULL_HANDLE;                                     \
     }
 #define MoveHandle         \
     handle = other.handle; \
@@ -22,7 +22,7 @@
 #define ENABLE_DEBUG_MESSENGER false
 #endif
 
-namespace vkb
+namespace vk
 {
     constexpr VkExtent2D defaultWindowSize = {1280, 720};
     inline auto &outStream = std::cout;
@@ -1384,6 +1384,157 @@ namespace vkb
             if (res)
             {
                 outStream << std::format("[ Framebuffer ] ERROR\nFailed to create a framebuffer!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+    };
+
+    class ShaderModule
+    {
+    private:
+        VkShaderModule handle = VK_NULL_HANDLE;
+
+    public:
+        ShaderModule() = default;
+        ShaderModule(VkShaderModuleCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        ShaderModule(const char *filepath /*VkShaderModuleCreateFlags flags*/)
+        {
+            Create(filepath);
+        }
+        ShaderModule(size_t codeSize, const uint32_t *pCode /*VkShaderModuleCreateFlags flags*/)
+        {
+            Create(codeSize, pCode);
+        }
+        ShaderModule(ShaderModule &&other) noexcept { MoveHandle; }
+        ~ShaderModule() { DestroyHandleBy(vkDestroyShaderModule); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+
+        // const function
+        VkPipelineShaderStageCreateInfo StageCreateInfo(VkShaderStageFlagBits stage, const char *entry = "main") const
+        {
+            return {
+                VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, // sType
+                nullptr,                                             // pNext
+                0,                                                   // flags
+                stage,                                               // stage
+                handle,                                              // module
+                entry,                                               // pName
+                nullptr                                              // pSpecializationInfo
+            };
+        }
+
+        // non-const function
+        ResultT Create(VkShaderModuleCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+            VkResult res = vkCreateShaderModule(GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Shader ] ERROR\nFailed to create a shader module!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT Create(const char *filepath /*VkShaderModuleCreateFlags flags*/)
+        {
+            std::ifstream file(filepath, std::ios::binary | std::ios::ate);
+            if (!file)
+            {
+                outStream << std::format("[ Shader ] ERROR\nFailed to open the file: {}\n", filepath);
+                return VK_ERROR_INVALID_SHADER_NV;
+            }
+            size_t fileSize = size_t(file.tellg());
+            std::vector<uint32_t> binaries(fileSize / 4);
+            file.seekg(0);
+            file.read(reinterpret_cast<char *>(binaries.data()), fileSize);
+            file.close();
+            return Create(fileSize, binaries.data());
+        }
+        ResultT Create(size_t codeSize, const uint32_t *pCode /*VkShaderModuleCreateFlags flags*/)
+        {
+            VkShaderModuleCreateInfo createInfo = {
+                .codeSize = codeSize,
+                .pCode = pCode};
+            return Create(createInfo);
+        }
+    };
+
+    class PipelineLayout
+    {
+    private:
+        VkPipelineLayout handle = VK_NULL_HANDLE;
+
+    public:
+        PipelineLayout() = default;
+        PipelineLayout(VkPipelineLayoutCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        PipelineLayout(PipelineLayout &&other) noexcept { MoveHandle; }
+        ~PipelineLayout() { DestroyHandleBy(vkDestroyPipelineLayout); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+
+        // non-const function
+        ResultT Create(VkPipelineLayoutCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+            VkResult res = vkCreatePipelineLayout(vk::GraphicsBase::Base().GetDevice(), &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ PipelineLayout ] ERROR\nFailed to create a pipeline layout!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+    };
+
+    class Pipeline
+    {
+    private:
+        VkPipeline handle = VK_NULL_HANDLE;
+
+    public:
+        Pipeline() = default;
+        Pipeline(VkGraphicsPipelineCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        Pipeline(VkComputePipelineCreateInfo &createInfo)
+        {
+            Create(createInfo);
+        }
+        Pipeline(Pipeline &&other) noexcept { MoveHandle; }
+        ~Pipeline() { DestroyHandleBy(vkDestroyPipeline); }
+
+        // Getter
+        DefineHandleTypeOperator;
+        DefineAddressFunction;
+
+        // non-const function
+        ResultT Create(VkGraphicsPipelineCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+            VkResult res = vkCreateGraphicsPipelines(vk::GraphicsBase::Base().GetDevice(), VK_NULL_HANDLE, 1, &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Pipeline ] ERROR\nFailed to create a pipeline!\nError code: {}\n", int32_t(res));
+            }
+            return res;
+        }
+        ResultT Create(VkComputePipelineCreateInfo &createInfo)
+        {
+            createInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+            VkResult res = vkCreateComputePipelines(vk::GraphicsBase::Base().GetDevice(), VK_NULL_HANDLE, 1, &createInfo, nullptr, &handle);
+            if (res)
+            {
+                outStream << std::format("[ Pipeline ] ERROR\nFailed to create a compute pipeline!\nError code: {}\n", int32_t(res));
             }
             return res;
         }

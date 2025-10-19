@@ -39,8 +39,8 @@ bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizea
         return false;
     }
 #ifdef _WIN32
-    vkb::GraphicsBase::Base().AddInstanceExtension(VK_KHR_SURFACE_EXTENSION_NAME);
-    vkb::GraphicsBase::Base().AddInstanceExtension(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
+    vk::GraphicsBase::Base().AddInstanceExtension(VK_KHR_SURFACE_EXTENSION_NAME);
+    vk::GraphicsBase::Base().AddInstanceExtension(VK_KHR_WIN32_SURFACE_EXTENSION_NAME);
 #else
     // get instance extensions
     uint32_t extensionCount = 0;
@@ -57,40 +57,40 @@ bool InitializeWindow(VkExtent2D size, bool isFullscreen = false, bool isResizea
         vk::GraphicsBase::Base().AddInstanceExtension(extensionNames[i]);
     }
 #endif
-    vkb::GraphicsBase::Base().AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    vk::GraphicsBase::Base().AddDeviceExtension(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     // create instance before create window surface
-    vkb::GraphicsBase::Base().UseLatestApiVersion();
-    if (vkb::GraphicsBase::Base().CreateInstance())
+    vk::GraphicsBase::Base().UseLatestApiVersion();
+    if (vk::GraphicsBase::Base().CreateInstance())
     {
         return false;
     }
     // create window surface
     VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (VkResult res = glfwCreateWindowSurface(vkb::GraphicsBase::Base().GetInstance(), pWindow, nullptr, &surface))
+    if (VkResult res = glfwCreateWindowSurface(vk::GraphicsBase::Base().GetInstance(), pWindow, nullptr, &surface))
     {
         std::cout << std::format("[ InitializeWindow ] ERROR\nFailed to create window surface!\nError code: {}\n", int32_t(res));
         glfwTerminate();
         return false;
     }
-    vkb::GraphicsBase::Base().SetSurface(surface);
+    vk::GraphicsBase::Base().SetSurface(surface);
 
     // by using || operator to short-circuit execution to save a few lines
     if ( // get physical device, and use first one, don't consider exchange physical device after any func below fail
-        vkb::GraphicsBase::Base().GetPhysicalDevices() ||
-        vkb::GraphicsBase::Base().DeterminePhysicalDevice(0, true, false) ||
-        vkb::GraphicsBase::Base().CreateDevice())
+        vk::GraphicsBase::Base().GetPhysicalDevices() ||
+        vk::GraphicsBase::Base().DeterminePhysicalDevice(0, true, false) ||
+        vk::GraphicsBase::Base().CreateDevice())
         return false;
     //----------------------------------------
 
-    if (vkb::GraphicsBase::Base().CreateSwapChain(isLimitFrameRate))
+    if (vk::GraphicsBase::Base().CreateSwapChain(isLimitFrameRate))
         return false;
     return true;
 }
 
-/// @brief terminate window
+// terminate window
 void TerminateWindow()
 {
-    vkb::GraphicsBase::Base().WaitIdle();
+    vk::GraphicsBase::Base().WaitIdle();
     glfwTerminate();
 }
 
